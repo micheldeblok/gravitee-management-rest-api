@@ -134,7 +134,7 @@ public class PortalPagesResource extends AbstractResource {
         int order = pageService.findMaxPortalPageOrder() + 1;
         newPageEntity.setOrder(order);
         newPageEntity.setLastContributor(getAuthenticatedUser());
-        PageEntity newPage = pageService.createPortalPage(newPageEntity);
+        PageEntity newPage = pageService.createPage(newPageEntity);
         if (newPage != null) {
             return Response
                     .created(URI.create("/portal/pages/" + newPage.getId()))
@@ -244,6 +244,49 @@ public class PortalPagesResource extends AbstractResource {
         pageService.findById(page);
 
         pageService.delete(page);
+    }
+
+    @POST
+    @Path("/_import")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    @ApiOperation(value = "Import pages",
+            notes = "User must be ADMIN to use this service")
+    @ApiResponses({
+            @ApiResponse(code = 201, message = "Page successfully created", response = PageEntity.class),
+            @ApiResponse(code = 500, message = "Internal server error")})
+    @Permissions({
+            @Permission(value = RolePermission.PORTAL_DOCUMENTATION, acls = RolePermissionAction.CREATE)
+    })
+    public List<PageEntity> importFiles(
+            @ApiParam(name = "page", required = true) @Valid @NotNull NewPageEntity newPageEntity) {
+        newPageEntity.setLastContributor(getAuthenticatedUser());
+        return pageService.importFiles(newPageEntity);
+    }
+
+    @PUT
+    @Path("/_import")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    @ApiOperation(value = "Import pages",
+            notes = "User must be ADMIN to use this service")
+    @ApiResponses({
+            @ApiResponse(code = 201, message = "Page successfully updated", response = PageEntity.class),
+            @ApiResponse(code = 500, message = "Internal server error")})
+    @Permissions({
+            @Permission(value = RolePermission.PORTAL_DOCUMENTATION, acls = RolePermissionAction.CREATE)
+    })
+    public List<PageEntity> updateImportFiles(
+            @ApiParam(name = "page", required = true) @Valid @NotNull PageEntity updatePageEntity) {
+        NewPageEntity newPageEntity = new NewPageEntity();
+        newPageEntity.setName(updatePageEntity.getName());
+        newPageEntity.setParentId(updatePageEntity.getParentId());
+        newPageEntity.setConfiguration(updatePageEntity.getConfiguration());
+        newPageEntity.setSource(updatePageEntity.getSource());
+        newPageEntity.setPublished(updatePageEntity.isPublished());
+
+        updatePageEntity.setLastContributor(getAuthenticatedUser());
+        return this.importFiles(newPageEntity);
     }
 
     private boolean isDisplayable(boolean isPagePublished, List<String> excludedGroups) {
