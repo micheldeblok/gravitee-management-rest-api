@@ -28,10 +28,12 @@ import io.gravitee.definition.model.EndpointGroup;
 import io.gravitee.definition.model.Path;
 import io.gravitee.definition.model.Proxy;
 import io.gravitee.definition.model.endpoint.HttpEndpoint;
+import io.gravitee.management.idp.api.identity.IdentityReference;
 import io.gravitee.management.idp.api.identity.SearchableUser;
-import io.gravitee.management.model.*;
+import io.gravitee.management.idp.core.authentication.impl.ReferenceSerializer;
 import io.gravitee.management.model.EventType;
 import io.gravitee.management.model.PageType;
+import io.gravitee.management.model.*;
 import io.gravitee.management.model.api.ApiEntity;
 import io.gravitee.management.model.api.ApiQuery;
 import io.gravitee.management.model.api.NewApiEntity;
@@ -56,8 +58,8 @@ import io.gravitee.repository.management.api.ApiRepository;
 import io.gravitee.repository.management.api.MembershipRepository;
 import io.gravitee.repository.management.api.search.ApiCriteria;
 import io.gravitee.repository.management.api.search.ApiFieldExclusionFilter;
-import io.gravitee.repository.management.model.*;
 import io.gravitee.repository.management.model.Visibility;
+import io.gravitee.repository.management.model.*;
 import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -139,6 +141,8 @@ public class ApiServiceImpl extends TransactionalService implements ApiService {
     private ApiHeaderService apiHeaderService;
     @Autowired
     private Configuration freemarkerConfiguration;
+    @Autowired
+    private ReferenceSerializer referenceSerializer;
 
     @Override
     public ApiEntity create(NewApiEntity newApiEntity, String userId) throws ApiAlreadyExistsException {
@@ -789,6 +793,7 @@ public class ApiServiceImpl extends TransactionalService implements ApiService {
             final JsonNode membersDefinition = jsonNode.path("members");
             if (membersDefinition != null && membersDefinition.isArray()) {
                 MemberEntity memberAsPrimaryOwner = null;
+                UserEntity currentPO = userService.findById(userId);
 
                 for (final JsonNode memberNode : membersDefinition) {
                     MemberToImport memberEntity = objectMapper.readValue(memberNode.toString(), MemberToImport.class);
@@ -796,11 +801,25 @@ public class ApiServiceImpl extends TransactionalService implements ApiService {
 
                     if (!idpUsers.isEmpty()) {
                         SearchableUser user = idpUsers.iterator().next();
+                        boolean userIsPO = false;
+                        try {
+                            IdentityReference deserializedUser = referenceSerializer.deserialize(user.getReference());
+                            if (deserializedUser.getReference().equals(currentPO.getSourceId())
+                                    && deserializedUser.getSource().equals(currentPO.getSource())) {
+                                userIsPO = true;
+                            }
+                        } catch (Exception e) {
+                            LOGGER.warn("Exception during deserialisation of the current user", e);
+                        }
 
-                        if (!members.contains(memberEntity)
-                                || members.stream().anyMatch(m ->
-                                m.getUsername().equals(memberEntity.getUsername())
-                                        && !m.getRole().equals(memberEntity.getRole()))) {
+                        if (    // userId is already PO of the API
+                                !userIsPO && (
+                                        // to not add users already members of the api
+                                        !members.contains(memberEntity)
+                                        || members.stream().anyMatch(m ->
+                                        m.getUsername().equals(memberEntity.getUsername())
+                                        && !m.getRole().equals(memberEntity.getRole())))
+                        ) {
                             MemberEntity membership = membershipService.addOrUpdateMember(
                                     new MembershipService.MembershipReference(MembershipReferenceType.API, createdOrUpdatedApiEntity.getId()),
                                     new MembershipService.MembershipUser(user.getId(), user.getReference()),
